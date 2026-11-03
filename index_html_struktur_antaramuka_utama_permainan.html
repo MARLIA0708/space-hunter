@@ -1,0 +1,422 @@
+<!DOCTYPE html>
+<html lang="ms">
+<head>
+  <meta charset="UTF-8">
+  <title>Jelajah Malaysia – Finger Motion Puzzle Challenge</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  
+  <!-- Font Google & CDN Tailwind CSS -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Fredoka:wght@400;600;700&family=Outfit:wght@400;600;800;900&display=swap" rel="stylesheet">
+  <script src="https://cdn.tailwindcss.com"></script>
+  
+  <!-- FontAwesome Icons -->
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+  
+  <!-- MediaPipe Hands & Camera Utils CDN dengan Fallback Tolerant -->
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js" crossorigin="anonymous"></script>
+  
+  <!-- Canvas Confetti -->
+  <script src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.6.0/dist/confetti.browser.min.js"></script>
+
+  <!-- Masukkan Fail Gaya CSS -->
+  <?!= include('Style'); ?>
+</head>
+<body class="bg-slate-950 text-slate-100 font-['Outfit'] select-none overflow-x-hidden min-h-screen relative">
+
+  <!-- ==================== KURSOR MAYA (GLOWING CURSOR) ==================== -->
+  <div id="virtual-cursor" class="pointer-events-none fixed z-[9999] -translate-x-1/2 -translate-y-1/2 transition-transform duration-75 hidden">
+    <div id="cursor-outer" class="w-10 h-10 rounded-full border-2 border-amber-400 bg-amber-400/20 backdrop-blur-sm flex items-center justify-center shadow-[0_0_20px_rgba(251,191,36,0.8)] animate-pulse">
+      <div id="cursor-inner" class="w-3 h-3 rounded-full bg-amber-300"></div>
+    </div>
+    <div id="cursor-state-tag" class="absolute -bottom-6 left-1/2 -translate-x-1/2 text-[10px] font-bold uppercase tracking-wider text-amber-300 px-2 py-0.5 rounded-full bg-slate-900/90 border border-amber-400/50 shadow whitespace-nowrap">
+      Kursor Jari
+    </div>
+  </div>
+
+  <!-- ==================== OVERLAY PAPARAN WEBCAM ==================== -->
+  <div id="webcam-container" class="fixed bottom-4 right-4 z-50 rounded-2xl overflow-hidden shadow-2xl border-2 border-cyan-500/50 bg-slate-900/90 backdrop-blur w-52 sm:w-64 transition-all duration-300">
+    <div class="bg-slate-900/95 px-3 py-1.5 flex items-center justify-between border-b border-cyan-500/30">
+      <div class="flex items-center space-x-2">
+        <span id="cam-status-dot" class="w-2.5 h-2.5 rounded-full bg-amber-500 animate-pulse"></span>
+        <span class="text-xs font-semibold tracking-wide text-cyan-300 flex items-center gap-1">
+          <i class="fa-solid fa-hand"></i> Hand Tracking
+        </span>
+      </div>
+      <button id="btn-toggle-cam-view" class="text-xs text-slate-400 hover:text-white px-1.5 py-0.5 rounded transition" title="Kecilkan/Besarkan">
+        <i class="fa-solid fa-chevron-down"></i>
+      </button>
+    </div>
+    <div id="webcam-body" class="relative aspect-video bg-black flex items-center justify-center">
+      <video id="webcam-feed" class="w-full h-full object-cover -scale-x-100" playsinline muted autoplay></video>
+      <canvas id="hand-mesh-canvas" class="absolute inset-0 w-full h-full -scale-x-100 pointer-events-none"></canvas>
+      <div id="no-hand-warning" class="absolute inset-0 bg-slate-950/75 backdrop-blur-sm flex flex-col items-center justify-center text-center p-2 text-rose-400 text-xs hidden">
+        <i class="fa-solid fa-hand-sparkles text-2xl mb-1 animate-bounce"></i>
+        <span id="cam-warning-text">Tangan tidak dikesan! Tunjukkan tangan di hadapan webcam.</span>
+      </div>
+    </div>
+    <div class="bg-slate-900/90 px-2 py-1 text-[11px] text-slate-300 flex justify-between items-center border-t border-slate-800">
+      <span id="pinch-label">Cubitan: <b class="text-slate-400">Lepas</b></span>
+      <span id="cam-fps" class="text-[10px] text-cyan-400 font-mono">0 FPS</span>
+    </div>
+  </div>
+
+  <!-- ==================== HEADER & TOP NAVIGATION ==================== -->
+  <header class="w-full bg-slate-900/80 backdrop-blur border-b border-slate-800 sticky top-0 z-40">
+    <div class="max-w-7xl mx-auto px-4 py-2 flex items-center justify-between">
+      <div class="flex items-center space-x-3">
+        <div class="w-10 h-10 rounded-xl bg-gradient-to-tr from-amber-500 via-rose-500 to-cyan-500 flex items-center justify-center shadow-lg shadow-cyan-500/20 text-white font-extrabold text-lg">
+          <i class="fa-solid fa-earth-asia"></i>
+        </div>
+        <div>
+          <h1 class="font-['Fredoka'] text-lg sm:text-xl font-bold bg-gradient-to-r from-amber-300 via-cyan-300 to-rose-400 bg-clip-text text-transparent leading-tight">
+            JELAJAH MALAYSIA
+          </h1>
+          <p class="text-[11px] text-slate-400 hidden sm:block tracking-wide">FINGER MOTION PUZZLE CHALLENGE</p>
+        </div>
+      </div>
+
+      <!-- Maklumat Semasa Permainan (HUD) -->
+      <div id="game-hud" class="hidden items-center space-x-3 sm:space-x-6">
+        <!-- Nyawa -->
+        <div class="flex items-center bg-slate-800/80 border border-slate-700/80 px-3 py-1.5 rounded-xl">
+          <span class="text-xs text-slate-400 mr-2 font-semibold hidden md:inline">Nyawa:</span>
+          <div id="lives-container" class="flex space-x-1 text-base sm:text-lg">
+            <span class="heart-icon transition-transform scale-100 text-rose-500">❤️</span>
+            <span class="heart-icon transition-transform scale-100 text-rose-500">❤️</span>
+            <span class="heart-icon transition-transform scale-100 text-rose-500">❤️</span>
+          </div>
+        </div>
+
+        <!-- Pemasa -->
+        <div class="flex items-center bg-slate-800/80 border border-slate-700/80 px-3 py-1.5 rounded-xl">
+          <i class="fa-regular fa-clock text-amber-400 mr-2 text-sm sm:text-base"></i>
+          <span id="timer-display" class="font-mono text-sm sm:text-lg font-bold text-amber-300">00:00</span>
+        </div>
+
+        <!-- Markah -->
+        <div class="flex items-center bg-slate-800/80 border border-cyan-500/40 px-3 py-1.5 rounded-xl shadow-[0_0_15px_rgba(6,182,212,0.15)]">
+          <i class="fa-solid fa-trophy text-yellow-400 mr-2 text-sm sm:text-base"></i>
+          <span class="text-xs text-slate-400 mr-1.5 hidden md:inline">Markah:</span>
+          <span id="score-display" class="font-mono text-base sm:text-xl font-black text-cyan-300">0</span>
+          <span class="text-xs text-slate-500 ml-1">/200</span>
+        </div>
+
+        <!-- Kemajuan -->
+        <div class="hidden lg:flex items-center bg-slate-800/80 border border-slate-700/80 px-3 py-1.5 rounded-xl">
+          <i class="fa-solid fa-map-pin text-emerald-400 mr-2"></i>
+          <span class="text-xs text-slate-400 mr-1">Kemajuan:</span>
+          <span id="progress-display" class="font-mono text-sm font-bold text-emerald-300">0/16</span>
+        </div>
+      </div>
+
+      <!-- Kawalan Audio & Tetapan Pantas -->
+      <div class="flex items-center space-x-2">
+        <button id="btn-toggle-bgm" class="w-9 h-9 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-amber-300 border border-slate-700 flex items-center justify-center transition shadow" title="Muzik Latar">
+          <i class="fa-solid fa-volume-high"></i>
+        </button>
+        <button id="btn-toggle-camera" class="w-9 h-9 rounded-xl bg-slate-800 hover:bg-slate-700 text-cyan-400 border border-slate-700 flex items-center justify-center transition shadow" title="Hidup/Mati Webcam">
+          <i class="fa-solid fa-camera"></i>
+        </button>
+      </div>
+    </div>
+  </header>
+
+  <!-- ==================== SKRIN 1: UTAMA / PENDAFTARAN ==================== -->
+  <main id="screen-welcome" class="max-w-6xl mx-auto px-4 py-8 flex flex-col items-center justify-center min-h-[calc(100vh-80px)]">
+    
+    <!-- Hero Banner & Tajuk -->
+    <div class="text-center max-w-3xl mb-8 space-y-4">
+      <div class="inline-flex items-center space-x-2 px-4 py-1.5 rounded-full bg-cyan-950/80 border border-cyan-500/40 text-cyan-300 text-xs sm:text-sm font-semibold mb-2 shadow-[0_0_20px_rgba(6,182,212,0.3)]">
+        <i class="fa-solid fa-sparkles text-amber-400"></i>
+        <span>Penyelidikan Geografi Masa Depan & Hand Tracking AI</span>
+      </div>
+      <h1 class="font-['Fredoka'] text-4xl sm:text-6xl font-black tracking-tight leading-none text-white drop-shadow-md">
+        JELAJAH <span class="bg-gradient-to-r from-amber-400 via-rose-500 to-cyan-400 bg-clip-text text-transparent">MALAYSIA</span>
+      </h1>
+      <p class="text-sm sm:text-lg text-slate-300 font-normal max-w-xl mx-auto">
+        Padankan 13 negeri dan 3 Wilayah Persekutuan pada lokasi peta yang betul menggunakan pergerakan jari anda secara langsung di hadapan webcam!
+      </p>
+    </div>
+
+    <!-- Kad Borang Pendaftaran & Butang Mula -->
+    <div class="w-full max-w-md bg-slate-900/90 border border-slate-700/80 rounded-3xl p-6 sm:p-8 shadow-2xl backdrop-blur relative overflow-hidden">
+      <!-- Aksen Cahaya -->
+      <div class="absolute -top-20 -right-20 w-40 h-40 bg-cyan-500/20 rounded-full blur-3xl pointer-events-none"></div>
+      <div class="absolute -bottom-20 -left-20 w-40 h-40 bg-rose-500/20 rounded-full blur-3xl pointer-events-none"></div>
+
+      <div class="space-y-5 relative z-10">
+        <div>
+          <label for="player-name" class="block text-xs font-bold text-slate-300 uppercase tracking-wider mb-2">
+            <i class="fa-solid fa-user text-amber-400 mr-1.5"></i> Nama Penuh Pemain <span class="text-rose-500">*</span>
+          </label>
+          <input type="text" id="player-name" placeholder="Contoh: Muhammad Adam" required
+                 class="w-full bg-slate-800/90 border border-slate-700 rounded-xl px-4 py-3 text-sm text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-cyan-400 focus:border-transparent transition">
+        </div>
+
+        <div>
+          <label for="player-class" class="block text-xs font-bold text-slate-300 uppercase tracking-wider mb-2">
+            <i class="fa-solid fa-graduation-cap text-cyan-400 mr-1.5"></i> Kelas <span class="text-rose-500">*</span>
+          </label>
+          <input type="text" id="player-class" placeholder="Contoh: 3 Cemerlang" required
+                 class="w-full bg-slate-800/90 border border-slate-700 rounded-xl px-4 py-3 text-sm text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-cyan-400 focus:border-transparent transition">
+        </div>
+
+        <!-- Status Kamera Ringkas -->
+        <div class="bg-slate-800/50 border border-slate-700/60 rounded-xl p-3 flex items-center justify-between text-xs">
+          <div class="flex items-center space-x-2">
+            <i class="fa-solid fa-video text-slate-400"></i>
+            <span class="text-slate-300">Status Webcam:</span>
+          </div>
+          <span id="intro-cam-status" class="px-2 py-0.5 rounded font-semibold bg-amber-500/20 text-amber-300 border border-amber-500/30">
+            Belum Aktif
+          </span>
+        </div>
+
+        <!-- Butang-butang Tindakan Utama -->
+        <div class="pt-2 space-y-3">
+          <button id="btn-start-game" class="w-full py-4 rounded-2xl bg-gradient-to-r from-amber-500 via-rose-500 to-cyan-500 hover:from-amber-400 hover:via-rose-400 hover:to-cyan-400 text-white font-extrabold text-base tracking-wide shadow-xl shadow-cyan-500/20 active:scale-[0.98] transition flex items-center justify-center space-x-2">
+            <i class="fa-solid fa-play"></i>
+            <span>MULA PERMAINAN</span>
+          </button>
+
+          <div class="grid grid-cols-2 gap-3">
+            <button id="btn-how-to-play" class="py-2.5 px-3 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-bold border border-slate-700 flex items-center justify-center space-x-1.5 transition">
+              <i class="fa-solid fa-book-open text-amber-400"></i>
+              <span>Cara Bermain</span>
+            </button>
+            <button id="btn-open-leaderboard" class="py-2.5 px-3 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-bold border border-slate-700 flex items-center justify-center space-x-1.5 transition">
+              <i class="fa-solid fa-award text-yellow-400"></i>
+              <span>Papan Skor</span>
+            </button>
+          </div>
+        </div>
+
+        <p class="text-[11px] text-center text-slate-400">
+          Sesuai untuk kawalan jari (MediaPipe AI) serta sokongan tetikus & skrin sentuh.
+        </p>
+      </div>
+    </div>
+  </main>
+
+  <!-- ==================== SKRIN 2: ARENA PERMAINAN (LEVEL 1) ==================== -->
+  <main id="screen-game" class="hidden w-full max-w-7xl mx-auto px-2 sm:px-4 py-3 flex flex-col items-center">
+    
+    <!-- Kotak Mesej Panduan Interaksi Semasa Bermain -->
+    <div id="game-feedback-toast" class="opacity-0 transition-opacity duration-300 fixed top-16 left-1/2 -translate-x-1/2 z-50 pointer-events-none px-6 py-2 rounded-2xl bg-slate-900/90 border border-cyan-500 text-cyan-300 font-bold text-sm shadow-xl flex items-center space-x-2">
+      <span id="feedback-icon"><i class="fa-solid fa-circle-info"></i></span>
+      <span id="feedback-text">Cubit untuk memilih kad dan lepaskan pada peta!</span>
+    </div>
+
+    <!-- Ruang Kerja Permainan Utama (16:9 Adaptif) -->
+    <div class="w-full grid grid-cols-1 lg:grid-cols-12 gap-3 items-start">
+      
+      <!-- Panel Kiri: Ruang Kad Label Negeri (3 Bahagian di Desktop) -->
+      <aside class="lg:col-span-3 bg-slate-900/80 border border-slate-800 rounded-2xl p-3 shadow-lg flex flex-col order-2 lg:order-1">
+        <div class="flex items-center justify-between pb-2 border-b border-slate-800 mb-2">
+          <div class="flex items-center space-x-2">
+            <span class="w-3 h-3 rounded-full bg-amber-400"></span>
+            <h2 class="text-xs font-black uppercase tracking-wider text-slate-200">Label Negeri & WP</h2>
+          </div>
+          <span id="remaining-labels-badge" class="text-[11px] font-bold text-amber-300 bg-amber-950/60 px-2 py-0.5 rounded-full border border-amber-500/30">
+            16 Baki
+          </span>
+        </div>
+
+        <!-- Kontena Kad Label (Scrollable jika padat) -->
+        <div id="cards-dock" class="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-1 gap-2 max-h-[220px] sm:max-h-[300px] lg:max-h-[580px] overflow-y-auto pr-1 custom-scrollbar">
+          <!-- Kad-kad negeri akan dijana secara dinamik oleh JavaScript -->
+        </div>
+
+        <!-- Panduan Ringkas Gerakan Jari -->
+        <div class="mt-3 pt-2 border-t border-slate-800/80 text-[11px] text-slate-400 space-y-1 hidden lg:block">
+          <p class="flex items-center gap-1.5"><i class="fa-solid fa-hand-pointer text-cyan-400"></i> Gerak jari: Kursor maya</p>
+          <p class="flex items-center gap-1.5"><i class="fa-solid fa-compress text-amber-400"></i> Cubit rapat: Ambil kad</p>
+          <p class="flex items-center gap-1.5"><i class="fa-solid fa-expand text-emerald-400"></i> Lepas cubit: Jatuhkan kad</p>
+        </div>
+      </aside>
+
+      <!-- Panel Kanan: Paparan Peta Vektor Malaysia (9 Bahagian di Desktop) -->
+      <section class="lg:col-span-9 bg-slate-900/90 border border-slate-800 rounded-2xl p-2 sm:p-4 shadow-2xl relative order-1 lg:order-2 flex flex-col items-center justify-center min-h-[380px] sm:min-h-[500px] lg:min-h-[600px] overflow-hidden">
+        
+        <!-- Peta Malaysia SVG Vektor dimasukkan daripada fail Map.html -->
+        <div id="map-wrapper" class="w-full h-full flex items-center justify-center relative">
+          <?!= include('Map'); ?>
+        </div>
+
+        <!-- Elemen Animasi Floating Feedback (Betul / Salah) -->
+        <div id="status-animation-overlay" class="pointer-events-none absolute inset-0 flex items-center justify-center z-30 hidden">
+          <div id="anim-box" class="px-8 py-4 rounded-3xl backdrop-blur-md border text-center transform scale-75 opacity-0 transition-all duration-300">
+            <i id="anim-icon" class="text-5xl mb-2"></i>
+            <h3 id="anim-title" class="text-2xl font-black"></h3>
+            <p id="anim-subtitle" class="text-xs"></p>
+          </div>
+        </div>
+      </section>
+
+    </div>
+  </main>
+
+  <!-- ==================== MODAL 1: KEPUTUSAN PERMAINAN ==================== -->
+  <div id="modal-gameover" class="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-md flex items-center justify-center p-4 hidden">
+    <div class="w-full max-w-lg bg-slate-900 border border-slate-700/80 rounded-3xl p-6 sm:p-8 shadow-2xl relative overflow-hidden animate-in fade-in zoom-in-95 duration-200">
+      
+      <div id="result-header" class="text-center space-y-2 mb-6">
+        <div id="result-badge-icon" class="w-16 h-16 rounded-2xl mx-auto flex items-center justify-center text-3xl shadow-lg mb-2">
+          <!-- Icon didorong oleh skrip (Piala / Tengkorak) -->
+        </div>
+        <h2 id="result-title" class="font-['Fredoka'] text-2xl sm:text-3xl font-black text-white">
+          TAHNIAH! ANDA BERJAYA!
+        </h2>
+        <p id="result-subtitle" class="text-xs sm:text-sm text-slate-300 max-w-sm mx-auto">
+          Misi jelajah peta geografi Malaysia telah diselesaikan.
+        </p>
+      </div>
+
+      <!-- Ringkasan Statistik -->
+      <div class="grid grid-cols-2 gap-3 mb-6 bg-slate-800/50 p-4 rounded-2xl border border-slate-700/60">
+        <div>
+          <span class="text-[11px] text-slate-400 block font-semibold">Nama Pemain</span>
+          <span id="res-player-name" class="font-bold text-white text-sm truncate block">-</span>
+        </div>
+        <div>
+          <span class="text-[11px] text-slate-400 block font-semibold">Kelas</span>
+          <span id="res-player-class" class="font-bold text-white text-sm truncate block">-</span>
+        </div>
+        <div>
+          <span class="text-[11px] text-slate-400 block font-semibold">Jumlah Markah</span>
+          <span id="res-score" class="font-mono font-black text-cyan-300 text-xl">0 / 200</span>
+        </div>
+        <div>
+          <span class="text-[11px] text-slate-400 block font-semibold">Masa Digunakan</span>
+          <span id="res-time" class="font-mono font-bold text-amber-300 text-base">00:00</span>
+        </div>
+        <div>
+          <span class="text-[11px] text-slate-400 block font-semibold">Padanan Betul</span>
+          <span id="res-correct" class="font-bold text-emerald-400 text-sm">0</span>
+        </div>
+        <div>
+          <span class="text-[11px] text-slate-400 block font-semibold">Kesilapan</span>
+          <span id="res-wrong" class="font-bold text-rose-400 text-sm">0</span>
+        </div>
+        <div class="col-span-2 pt-1 border-t border-slate-700/50 flex justify-between items-center text-xs">
+          <span class="text-slate-400">Baki Nyawa: <span id="res-lives" class="text-rose-500 font-bold"></span></span>
+          <span id="res-status-tag" class="px-2 py-0.5 rounded font-extrabold text-[11px]"></span>
+        </div>
+      </div>
+
+      <!-- Status Simpanan Google Sheets -->
+      <div id="save-status-box" class="mb-5 text-center text-xs p-2 rounded-xl bg-slate-800/80 border border-slate-700 text-slate-300 flex items-center justify-center space-x-2">
+        <i id="save-spinner" class="fa-solid fa-spinner fa-spin text-cyan-400"></i>
+        <span id="save-msg">Menyimpan keputusan ke Google Sheets...</span>
+      </div>
+
+      <!-- Butang Pilihan Tamat -->
+      <div class="grid grid-cols-2 gap-3">
+        <button id="btn-replay" class="py-3 px-4 rounded-xl bg-gradient-to-r from-amber-500 to-rose-500 hover:from-amber-400 hover:to-rose-400 text-white font-extrabold text-sm shadow-lg flex items-center justify-center space-x-2 transition">
+          <i class="fa-solid fa-rotate-right"></i>
+          <span>MAIN SEMULA</span>
+        </button>
+        <button id="btn-view-leaderboard-end" class="py-3 px-4 rounded-xl bg-slate-800 hover:bg-slate-700 text-white font-bold text-sm border border-slate-700 flex items-center justify-center space-x-2 transition">
+          <i class="fa-solid fa-trophy text-yellow-400"></i>
+          <span>PAPAN SKOR</span>
+        </button>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- ==================== MODAL 2: CARA BERMAIN ==================== -->
+  <div id="modal-howto" class="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-md flex items-center justify-center p-4 hidden">
+    <div class="w-full max-w-lg bg-slate-900 border border-slate-700/80 rounded-3xl p-6 shadow-2xl relative">
+      <div class="flex items-center justify-between pb-3 border-b border-slate-800 mb-4">
+        <h3 class="font-['Fredoka'] text-xl font-bold text-amber-300 flex items-center gap-2">
+          <i class="fa-solid fa-circle-question"></i> Cara Bermain
+        </h3>
+        <button id="btn-close-howto" class="text-slate-400 hover:text-white text-lg">
+          <i class="fa-solid fa-xmark"></i>
+        </button>
+      </div>
+      <div class="space-y-3 text-xs sm:text-sm text-slate-300 leading-relaxed max-h-[60vh] overflow-y-auto pr-1">
+        <div class="bg-slate-800/60 p-3 rounded-xl border border-slate-700/50">
+          <h4 class="font-bold text-cyan-300 mb-1">1. Kawalan Pergerakan Jari</h4>
+          <p>Halakan jari telunjuk anda ke hadapan webcam untuk menggerakkan kursor bercahaya. Rapatkan ibu jari dan jari telunjuk (gerakan mencubit) untuk memegang kad label negeri.</p>
+        </div>
+        <div class="bg-slate-800/60 p-3 rounded-xl border border-slate-700/50">
+          <h4 class="font-bold text-cyan-300 mb-1">2. Seret & Lepaskan (Drag & Drop)</h4>
+          <p>Seret kad ke kawasan negeri pada peta yang sepadan. Buka semula jari anda untuk menjatuhkan kad. Jika betul, kad akan terkunci secara kekal!</p>
+        </div>
+        <div class="bg-slate-800/60 p-3 rounded-xl border border-slate-700/50">
+          <h4 class="font-bold text-cyan-300 mb-1">3. Sistem Nyawa & Markah</h4>
+          <p>Pemain bermula dengan 3 nyawa. Setiap jawapan betul menyumbang <b>+10 markah</b>. Kesilapan akan menolak <b>1 nyawa</b>. Tamat semua 16 label memberi <b>+20 bonus</b>, dan tamat pantas bawah 180 saat memberi tambahan <b>+20 bonus</b> (Maksimum 200 markah).</p>
+        </div>
+        <div class="bg-slate-800/60 p-3 rounded-xl border border-slate-700/50">
+          <h4 class="font-bold text-cyan-300 mb-1">4. Alternatif Tetikus / Skrin Sentuh</h4>
+          <p>Sekiranya webcam tidak dapat diakses, anda boleh menggunakan klik tetikus atau sentuhan jari pada skrin seperti biasa.</p>
+        </div>
+      </div>
+      <div class="mt-5 text-right">
+        <button id="btn-close-howto-footer" class="px-5 py-2 rounded-xl bg-cyan-600 hover:bg-cyan-500 text-white font-bold text-xs">
+          Faham & Tutup
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ==================== MODAL 3: PAPAN PENDAHULU (LEADERBOARD) ==================== -->
+  <div id="modal-leaderboard" class="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-md flex items-center justify-center p-4 hidden">
+    <div class="w-full max-w-2xl bg-slate-900 border border-slate-700/80 rounded-3xl p-6 shadow-2xl relative flex flex-col max-h-[85vh]">
+      <div class="flex items-center justify-between pb-3 border-b border-slate-800 mb-4">
+        <div class="flex items-center space-x-2">
+          <div class="w-8 h-8 rounded-lg bg-amber-500/20 text-amber-300 flex items-center justify-center font-bold">
+            <i class="fa-solid fa-trophy"></i>
+          </div>
+          <div>
+            <h3 class="font-['Fredoka'] text-xl font-bold text-white">Papan Pendahulu</h3>
+            <p class="text-[11px] text-slate-400">10 Pemain Terbaik dari Google Sheets</p>
+          </div>
+        </div>
+        <button id="btn-close-leaderboard" class="text-slate-400 hover:text-white text-lg">
+          <i class="fa-solid fa-xmark"></i>
+        </button>
+      </div>
+
+      <!-- Jadual Skor -->
+      <div class="overflow-y-auto flex-1 custom-scrollbar pr-1">
+        <table class="w-full text-left text-xs">
+          <thead class="bg-slate-800/80 text-slate-300 uppercase font-bold sticky top-0">
+            <tr>
+              <th class="p-2.5 rounded-l-lg">Ked.</th>
+              <th class="p-2.5">Nama</th>
+              <th class="p-2.5">Kelas</th>
+              <th class="p-2.5 text-center">Markah</th>
+              <th class="p-2.5 text-center rounded-r-lg">Masa</th>
+            </tr>
+          </thead>
+          <tbody id="leaderboard-tbody" class="divide-y divide-slate-800 text-slate-200">
+            <tr>
+              <td colspan="5" class="text-center py-8 text-slate-400">
+                <i class="fa-solid fa-spinner fa-spin text-cyan-400 mr-2"></i> Memuat data ranking...
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="pt-4 mt-2 border-t border-slate-800 flex justify-between items-center text-xs">
+        <button id="btn-refresh-leaderboard" class="text-cyan-400 hover:text-cyan-300 flex items-center gap-1 font-semibold">
+          <i class="fa-solid fa-arrows-rotate"></i> Kemas Kini
+        </button>
+        <button id="btn-close-leaderboard-footer" class="px-5 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-white font-bold">
+          Tutup
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Masukkan Skrip Logik Interaktif -->
+  <?!= include('Script'); ?>
+</body>
+</html>
